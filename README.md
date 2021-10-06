@@ -6,7 +6,9 @@
 
 This folder containts the main datasets provided to all participants by the QSIDE team.  These should be downloaded and used, but _please don't overwrite anything in this folder_.  The primary datasets consist of two collections:
 
-* `Williamstown_policing`:
+* `Williamstown_policing:
+  - `Logs2019.pdf`
+  - `Logs2018.pdf`
 
 * `MN_sentencing`: 
   - `2019-Drug.pdf`
@@ -18,6 +20,6 @@ This folder containts the main datasets provided to all participants by the QSID
   - `allmn.csv`.  To load this file:
 ```
           import pandas as pd
-          df = pd.read_csv("allmn.csv", dtype={45:str, 46:str}) #TO avoid datatype warnings.
+          df = pd.read_csv("allmn.csv", dtype={45:str, 46:str}) #To avoid datatype warnings.
 ```
 

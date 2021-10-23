@@ -5,30 +5,24 @@ from PIL import Image
 import pytesseract
 from pdf2image import pdfinfo_from_path,convert_from_path
 
-
-
 logging.basicConfig(level=logging.INFO)
-
-
-
 
 def main(argv):
 
     logging.info("\n Retrieving Pages")
 
-    info = pdfinfo_from_path('../primary_datasets/Williamstown_policing/Logs2019.pdf', userpw=None, poppler_path=None)
+    info = pdfinfo_from_path('../primary_datasets/Williamstown_policing/Logs2019.pdf',
+        userpw=None, poppler_path=None)
 
     maxPages = info["Pages"]
 
-
     n = 1
     for page in range(1, maxPages+1, 10) : 
-        pages = convert_from_path('../primary_datasets/Williamstown_policing/Logs2019.pdf', dpi=300, first_page=page, last_page = min(page+10-1,maxPages))
+        pages = convert_from_path('../primary_datasets/Williamstown_policing/Logs2019.pdf',
+            dpi=300, first_page=page, last_page = min(page+10-1,maxPages))
 
-        logging.info("\n {} Pages Retrieved".format(len(pages)))
+        logging.info("\n Pages {} through {} Retrieved".format(n, n+len(pages)))
 
-
-        
         for page in pages:
             
             # Write pdf to image file.

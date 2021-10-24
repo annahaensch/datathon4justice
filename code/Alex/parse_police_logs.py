@@ -40,7 +40,7 @@ def parse_police_logs(year):
 
     npages = len([fname for fname in os.listdir(os.path.join(path2data, 'Logs{}'.format(year))) if 'page' in fname])
     print(npages)
-    npages=100
+    #npages=100
     for ipage in range(1, npages + 1):
         with open(os.path.join(path2data, 'Logs{}/page_{}.txt'.format(year, ipage)),'r') as infile:
             page_text = infile.read()
@@ -157,7 +157,9 @@ def find_next_word(entry_text, left_text):
     left_end = re.search(left_text, entry_text)
     
     if left_end:
-        return re.search('([^\s]+)', entry_text[left_end.end():]).group(0)
+        nextsearch = re.search('([^\s]+)', entry_text[left_end.end():])
+        if nextsearch:
+            return nextsearch.group(0)
     else:
         return None
 
@@ -178,7 +180,9 @@ def parse_entry(entry_text):
 
         # the next 'word' is always the time
         call_time = entry_words[1][:min(4, len(entry_words[1]))]
-    
+        for c in ['(', ')', "[", "]", "{", "}"]:
+            call_time = call_time.replace(c, "")
+
         # call reason
         call_reason = find_between(entry_text, call_time, taker_strs)
         if call_reason is None:
@@ -275,30 +279,36 @@ def process_vehicles(entry_text, call_number, all_vehicles, all_people):
         
 def get_vehicle_info(vehicle_txt):
     vehicle_words = [w for w in vehicle_txt.split(' ') if len(w) > 0]
-    
-    vcolor = vehicle_words[1]
-    vyear = vehicle_words[2]
-    
-    if 'Reg:' in vehicle_words:
-        regidx = vehicle_words.index('Reg:')
-        vmodel = " ".join(vehicle_words[3:regidx])
-    elif 'Reg' in vehicle_words:
-        regidx = vehicle_words.index('Reg')
-        vmodel = " ".join(vehicle_words[3:regidx])
+    if len(vehicle_words) > 4:
+        vcolor = vehicle_words[1]
+        vyear = vehicle_words[2]
+        
+        if 'Reg:' in vehicle_words:
+            regidx = vehicle_words.index('Reg:')
+            vmodel = " ".join(vehicle_words[3:regidx])
+        elif 'Reg' in vehicle_words:
+            regidx = vehicle_words.index('Reg')
+            vmodel = " ".join(vehicle_words[3:regidx])
+        else:
+            vmodel = None
+            
+        
+        vinidx = len(vehicle_words)
+        if 'VIN:' in vehicle_words: 
+            vinidx = vehicle_words.index('VIN:')
+        elif 'VIN' in vehicle_words:
+            vinidx = vehicle_words.index('VIN')
+        
+        if vinidx < len(vehicle_words)-1:
+            vin = vehicle_words[vinidx+1]
+        else:
+            vin = None
+
+        return [vcolor, vyear, vmodel, vin]
     else:
-        vmodel = None
+        return [None]*4
         
-        
-    if 'VIN:' in vehicle_words:
-        vinidx = vehicle_words.index('VIN:')
-        vin = vehicle_words[vinidx+1]
-    elif 'VIN' in vehicle_words:
-        vinidx = vehicle_words.index('VIN')
-        vin = vehicle_words[vinidx+1]
-    else:
-        vin = None
-        
-    return [vcolor, vyear, vmodel, vin]
+    
 
 def get_person_info(person_txt):
     lastname_idx = re.search(',', person_txt)
@@ -335,23 +345,23 @@ def standardize_partial(s, known_list, min_ratio):
 def clean_call_actions(parsed_pages):
 
     with open('williamston_known_actions.txt', 'r') as infile:
-        known_actions = [line.replace("\n", "") for line in infile]
+        known_actions = [line.replace("\n", "").strip() for line in infile]
 
     known_actions_ratio = np.array([ratio(a1,a2) for a1, a2 in itertools.combinations(known_actions, 2)])
-    min_actions_ratio = known_actions_ratio.max() + 5
+    min_actions_ratio = known_actions_ratio.max()
 
     with open('williamston_known_reasons.txt', 'r') as infile:
-        known_reasons = [line.replace("\n", "") for line in infile]
+        known_reasons = [line.replace("\n", "").strip() for line in infile]
 
     known_reasons_ratio = np.array([ratio(a1,a2) for a1, a2 in itertools.combinations(known_reasons, 2)])
-    min_reasons_ratio = known_reasons_ratio.max() + 5
+    min_reasons_ratio = known_reasons_ratio.max()
 
     parsed_pages['call_reasons'] = [standardize_partial(s, known_reasons, min_reasons_ratio) for s in parsed_pages['call_reason_action'].values]
     parsed_pages['call_actions'] = [standardize_partial(s, known_actions, min_actions_ratio) for s in parsed_pages['call_reason_action'].values]
 
 
     return parsed_pages
-      
+
 
 if __name__ == "__main__":
     parse_police_logs(2019)

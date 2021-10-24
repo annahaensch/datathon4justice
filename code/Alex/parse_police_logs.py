@@ -9,8 +9,8 @@ import pandas as pd
 import numpy as np
 
 
-taker_strs = "|".join(["Call Taker;", "‘Call Taker", "Call Taker", "Cail Taker", "Cali Taker", "call Taker", 
-    "‘call Taker:", "Calli Taker:", "Call faker:"])
+taker_strs = "|".join(["Call Taker;", "‘Call Taker", "Call Taker", "Cail Taker", "Cali Taker", "call Taker", "Cajl Taker",
+    "‘call Taker:", "Calli Taker:", "Call faker:", "Call Paker:"])
 loc_strs = "|".join(["Location/Address", "Locatiion/Address", "Locat ion/Address", "Loctation/Address:", "Lo¢ation/Address:", 
     "Lo¢ation/Addregs","Lecation/Address", "Lecation/Address", "Lacation/Address:", "Lacation/Address", "Loration/Address", 
     "Logation/Address", "Leocation/Address:", "Loeation/Address", "Lodation/Address", "Location"])
@@ -427,6 +427,25 @@ def clean_call_actions(parsed_pages):
 def process_units(entry_text, call_number, all_units):
 
     unit_starts = [uloc.start() for uloc in re.finditer(unit_strs, entry_text)] + [-1]
+    if len(unit_starts) > 1:
+        for iunits in range(len(unit_starts) - 1):
+            
+            unit_text = entry_text[unit_starts[iunits]:unit_starts[iunits+1]]
+            
+            unitnum = find_next_word(unit_text, unit_strs)
+            disp_time = find_next_word(unit_text, disp_strs)
+            enrt_time = find_next_word(unit_text, enrt_strs)
+            arvd_time = find_next_word(unit_text, arvd_strs)
+            clrd_time = find_next_word(unit_text, clrd_strs)
+            
+            all_units.append([call_number, unitnum, disp_time, enrt_time, arvd_time, clrd_time])
+            
+            
+    return all_units
+
+def process_arrest_summons(entry_text, call_number, all_people):
+
+    arrest_starts = [aloc.start() for aloc in re.finditer(arrest_strs, entry_text)] + [-1]
     if len(unit_starts) > 1:
         for iunits in range(len(unit_starts) - 1):
             

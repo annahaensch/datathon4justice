@@ -9,18 +9,25 @@ import pandas as pd
 import numpy as np
 
 
-taker_strs = "|".join(["‘Call Taker", "Call Taker", "Cail Taker", "Cali Taker"])
-loc_strs = "|".join(["Location/Address", "Locatiion/Address", "Locat ion/Address", "Location"])
+taker_strs = "|".join(["Call Taker;", "‘Call Taker", "Call Taker", "Cail Taker", "Cali Taker", "call Taker", "Cajl Taker",
+    "‘call Taker:", "Calli Taker:", "Call faker:", "Call Paker:"])
+loc_strs = "|".join(["Location/Address", "Locatiion/Address", "Locat ion/Address", "Loctation/Address:", "Lo¢ation/Address:", 
+    "Lo¢ation/Addregs","Lecation/Address", "Lecation/Address", "Lacation/Address:", "Lacation/Address", "Loration/Address", 
+    "Logation/Address", "Leocation/Address:", "Loeation/Address", "Lodation/Address", "Location"])
 narr_strs = "|".join(["Narrative:", "Narrative"])
 vehicle_strs = "|".join(["Vehicle:", "Vehicle"])
 owner_strs = "|".join(["Owner:", "Owner"])
 operator_strs = "|".join(["Operator:", "Operator"])
+arreset_strs = "|".join(["Juvenile Arrest", "Arrest:", "Arrest"])
+summons_strs = "|".join(["Summons:", "Summons"])
+charges_strs = "|".join(["Charges:", "Charges"])
+citation_strs = "|".join(["Refer To Citation:", "Refer To Citation"])
 
 unit_strs = "|".join(["Unit:", "Unit"])
 arvd_strs = "|".join(['Arvd~', 'Arvd-', "Arv@-", "Arvd+"])
-clrd_strs = "|".join(['Clrd-', 'Clrd~', 'Cird-', 'Clird-', 'Clrd+', "Clr@-"])
+clrd_strs = "|".join(['Clrd-', 'Clrd~', 'Cird-', 'Clird-', 'Clrd+', "Clr@-", "Clré-"])
 disp_strs = "|".join(['Disp-', 'Disp~', 'Disp+', "Dis@-"])
-enrt_strs = "|".join(['Enrt-', 'Enrt~', 'Enrt+', "Enr@-"])
+enrt_strs = "|".join(['Enrt-', 'Enrt~', 'Enrt+', "Enr@-", "Enrt~-"])
 
 end_of_string_tol = 60
 
@@ -85,13 +92,16 @@ def parse_police_logs(year):
     parsed_pages = pd.DataFrame(parsed_pages, 
                             columns = ['current_date', 'page_num', 'call_number', 'call_time', 
                                        'original_call_reason_action', 'original_call_taker', "call_address", 
-                                       "arvd_time", "clrd_time", "narrative_text"])                
+                                       "arvd_time", "clrd_time", "narrative_text", "referenced_citation"])                
 
     # cleanup call_takers
-    parsed_pages['call_taker'] = parsed_pages['call_taker'].str.replace(":", "").str.strip()
+    parsed_pages['original_call_taker'] = parsed_pages['original_call_taker'].str.replace(":", "").str.strip()
 
     # standardize the officer names
     parsed_pages = clean_officer_names(parsed_pages)
+
+    # standarize the actions reasons
+    parsed_pages = clean_call_actions(parsed_pages)
 
     # finish and save
     parsed_pages.to_csv('../../data/parsed_logs_{}.csv'.format(year), mode='w', index=False, header=True)
@@ -187,29 +197,68 @@ def parse_entry(entry_text):
         # call number is always the first word of the entry
         call_number = entry_words[0]
 
-        # the next 'word' is always the time
-        call_time = entry_words[1][:min(4, len(entry_words[1]))]
-        for c in ['(', ')', "[", "]", "{", "}"]:
-            call_time = call_time.replace(c, "")
+        if re.search('19-(?=[0-9])', call_number):
+            # the next 'word' is always the time
+            call_time = entry_words[1][:min(4, len(entry_words[1]))]
+            for c in ['(', ')', "[", "]", "{", "}"]:
+                call_time = call_time.replace(c, "")
 
-        # call reason
-        call_reason = find_between(entry_text, call_time, taker_strs)
-        if call_reason is None:
-            # see if its actually near the end of the string so call taker never appears
-            if re.search(call_time, entry_text) and re.search(taker_strs, entry_text) is None:
-                
-                call_reason = entry_text[re.search(call_time, entry_text).end():]
-                
+            # call reason
+            call_reason = find_between(entry_text, call_time, taker_strs)
+            if call_reason is None:
+                # see if its actually near the end of the string so call taker never appears
+                if re.search(call_time, entry_text) and re.search(taker_strs, entry_text) is None:
+                    
+                    call_reason = entry_text[re.search(call_time, entry_text).end():]
+
+
+            # call reasonaction is always the string between time and taker
+            if re.search(taker_strs, entry_text):
+                call_reason = find_between(entry_text, call_time, taker_strs)
+            elif re.search(loc_strs, entry_text):
+                call_reason = find_between(entry_text, call_time, loc_strs)
+            elif re.search(unit_strs, entry_text):
+                call_reason = find_between(entry_text, call_time, unit_strs)
+            elif re.search(vehicle_strs, entry_text):
+                call_reason = find_between(entry_text, call_time, vehicle_strs)
+            elif re.search(narr_strs, entry_text):
+                call_reason = find_between(entry_text, call_time, narr_strs)
+            elif re.search(call_time, entry_text):
+                # see if its actually near the end of the string so location doesnt appear
+                if len(entry_text) - re.search(call_time, entry_text).end() < end_of_string_tol:
+                    call_reason = entry_text[re.search(call_time, entry_text).end():]
+                else:
+                    call_reason = None
+                    print("End of string?", entry_text)
+            else:
+                call_reason=None
+        else:
+            call_time = None
+            call_reason = None 
 
         # call taker is always the string between taker and location
-        call_taker =  find_between(entry_text, taker_strs, loc_strs)
-        if call_taker is None and re.search(taker_strs, entry_text):
-            # see if its actually near the end of the string so location doesnt appear
-            if len(entry_text) - re.search(taker_strs, entry_text).end() < end_of_string_tol:
-                call_taker = entry_text[re.search(taker_strs, entry_text).end():]
+        has_taker = re.search(taker_strs, entry_text)
+        if has_taker:
+            # first try to locate between taker and location
+            if re.search(loc_strs, entry_text):
+                call_taker = find_between(entry_text, taker_strs, loc_strs)
+            elif re.search(unit_strs, entry_text):
+                call_taker = find_between(entry_text, taker_strs, unit_strs)
+            elif re.search(vehicle_strs, entry_text):
+                call_taker = find_between(entry_text, taker_strs, vehicle_strs)
+            elif re.search(narr_strs, entry_text):
+                call_taker = find_between(entry_text, taker_strs, narr_strs)
             else:
-                print("End of string?", len(entry_text) - re.search(taker_strs, entry_text).end(), entry_text)
-                print(re.search(taker_strs, entry_text) )
+                # see if its actually near the end of the string so location doesnt appear
+                if len(entry_text) - re.search(taker_strs, entry_text).end() < end_of_string_tol:
+                    call_taker = entry_text[re.search(taker_strs, entry_text).end():]
+                else:
+                    call_taker = None
+                    print("End of string?", len(entry_text) - re.search(taker_strs, entry_text).end(), entry_text)
+                    print(re.search(taker_strs, entry_text) )
+        else:
+            #print(entry_text)
+            call_taker = None
         
         #get address
         entry_text_ = entry_text.replace(" ","_").split("__")
@@ -222,6 +271,7 @@ def parse_entry(entry_text):
                 call_address = entry_text_[loc_idx +1]
 
 
+        # first times for call
         arvd_time = find_next_word(entry_text, arvd_strs)
         clrd_time = find_next_word(entry_text, clrd_strs)
         if clrd_time and len(clrd_time) < 8:
@@ -230,8 +280,11 @@ def parse_entry(entry_text):
         narrative_text = re.search(narr_strs, entry_text)
         if narrative_text:
             narrative_text = entry_text[narrative_text.start():]
-    
-    return [call_number, call_time, call_reason, call_taker, call_address, arvd_time, clrd_time, narrative_text]
+
+        # citations
+        citation_text = find_next_word(entry_text, citation_strs)
+
+    return [call_number, call_time, call_reason, call_taker, call_address, arvd_time, clrd_time, narrative_text, citation_text]
 
 
 def process_vehicles(entry_text, call_number, all_vehicles, all_people):
@@ -374,6 +427,25 @@ def clean_call_actions(parsed_pages):
 def process_units(entry_text, call_number, all_units):
 
     unit_starts = [uloc.start() for uloc in re.finditer(unit_strs, entry_text)] + [-1]
+    if len(unit_starts) > 1:
+        for iunits in range(len(unit_starts) - 1):
+            
+            unit_text = entry_text[unit_starts[iunits]:unit_starts[iunits+1]]
+            
+            unitnum = find_next_word(unit_text, unit_strs)
+            disp_time = find_next_word(unit_text, disp_strs)
+            enrt_time = find_next_word(unit_text, enrt_strs)
+            arvd_time = find_next_word(unit_text, arvd_strs)
+            clrd_time = find_next_word(unit_text, clrd_strs)
+            
+            all_units.append([call_number, unitnum, disp_time, enrt_time, arvd_time, clrd_time])
+            
+            
+    return all_units
+
+def process_arrest_summons(entry_text, call_number, all_people):
+
+    arrest_starts = [aloc.start() for aloc in re.finditer(arrest_strs, entry_text)] + [-1]
     if len(unit_starts) > 1:
         for iunits in range(len(unit_starts) - 1):
             

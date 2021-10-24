@@ -9,14 +9,18 @@ import pandas as pd
 import numpy as np
 
 
-arvd_strs = "|".join(['Arvd~', 'Arvd-', "Arv@-", "Arvd+"])
-clrd_strs = "|".join(['Clrd-', 'Clrd~', 'Cird-', 'Clird-', 'Clrd+', "Clr@-"])
 taker_strs = "|".join(["‘Call Taker", "Call Taker", "Cail Taker", "Cali Taker"])
 loc_strs = "|".join(["Location/Address", "Locatiion/Address", "Locat ion/Address", "Location"])
 narr_strs = "|".join(["Narrative:", "Narrative"])
 vehicle_strs = "|".join(["Vehicle:", "Vehicle"])
 owner_strs = "|".join(["Owner:", "Owner"])
 operator_strs = "|".join(["Operator:", "Operator"])
+
+unit_strs = "|".join(["Unit:", "Unit"])
+arvd_strs = "|".join(['Arvd~', 'Arvd-', "Arv@-", "Arvd+"])
+clrd_strs = "|".join(['Clrd-', 'Clrd~', 'Cird-', 'Clird-', 'Clrd+', "Clr@-"])
+disp_strs = "|".join(['Disp-', 'Disp~', 'Disp+', "Dis@-"])
+enrt_strs = "|".join(['Enrt-', 'Enrt~', 'Enrt+', "Enr@-"])
 
 end_of_string_tol = 60
 
@@ -63,7 +67,7 @@ def parse_police_logs(year):
             parsed_pages[-1][2:] = replace_none_with_value(parsed_pages[-1][2:], str_entry)
             call_number = parsed_pages[-1][2]
             all_vehicles, all_people = process_vehicles(entry_text, call_number, all_vehicles, all_people)
-
+            all_responding = process_units(entry_text, call_number, all_responding)
 
         for i_start in range(len(page_incidents)-1):
 
@@ -75,12 +79,12 @@ def parse_police_logs(year):
                 parsed_pages.append([current_date, ipage] + str_entry)
                 call_number = str_entry[0]
                 all_vehicles, all_people = process_vehicles(entry_text, call_number, all_vehicles, all_people)
-            
+                all_responding = process_units(entry_text, call_number, all_responding)
 
     # done so make the data frame
     parsed_pages = pd.DataFrame(parsed_pages, 
                             columns = ['current_date', 'page_num', 'call_number', 'call_time', 
-                                       'call_reason_action', 'call_taker', "call_address", 
+                                       'original_call_reason_action', 'original_call_taker', "call_address", 
                                        "arvd_time", "clrd_time", "narrative_text"])                
 
     # cleanup call_takers
@@ -90,20 +94,25 @@ def parse_police_logs(year):
     parsed_pages = clean_officer_names(parsed_pages)
 
     # finish and save
-    parsed_pages.to_csv('../../data/parsed_logs_2019.csv', mode='w', index=False, header=True)
+    parsed_pages.to_csv('../../data/parsed_logs_{}.csv'.format(year), mode='w', index=False, header=True)
 
 
 
     all_vehicles = pd.DataFrame(all_vehicles, 
                             columns = ['call_number', "vehicles_color", "vehicles_year", "vehicles_model", "vehicles_vin"])
 
-    all_vehicles.to_csv('../../data/parsed_vehicles_2019.csv', mode='w', index=False, header=True)
+    all_vehicles.to_csv('../../data/parsed_vehicles_{}.csv'.format(year), mode='w', index=False, header=True)
 
     all_people = pd.DataFrame(all_people, 
                             columns = ['call_number', 'operator/owner', "vehicles_vin", "lastname", 
                             "firstname", "race", "sex", "stree", "city", "state", "zipcode"])                
 
-    all_people.to_csv('../../data/parsed_people_2019.csv', mode='w', index=False, header=True)
+    all_people.to_csv('../../data/parsed_people_{}.csv'.format(year), mode='w', index=False, header=True)
+
+    all_responding = pd.DataFrame(all_responding, 
+                            columns = ['call_number', 'unit', "disp_time", "enrt_time", "arvd_time", "clrd_time"])                
+
+    all_responding.to_csv('../../data/parsed_responding_units_{}.csv'.format(year), mode='w', index=False, header=True)
 
 
 def check_for_date(page_text):
@@ -126,13 +135,13 @@ def check_for_date(page_text):
 
 def clean_officer_names(parsed_pages):
     with open('williamston_known_officers.txt', 'r') as infile:
-        known_officers = [line.replace("\n", "") for line in infile]
+        known_officers = [line.replace("\n", "").strip() for line in infile]
 
     known_officer_ratio = np.array([ratio(o1,o2) for o1, o2 in itertools.combinations(known_officers, 2)])
 
-    min_officer_ratio = known_officer_ratio.max() + 5
+    min_officer_ratio = known_officer_ratio.max() + 3
 
-    parsed_pages['cleaned_call_taker'] = [standardize_officers(oname, known_officers, min_officer_ratio) for oname in parsed_pages['call_taker'].values]
+    parsed_pages['call_taker'] = [standardize_officers(oname, known_officers, min_officer_ratio) for oname in parsed_pages['original_call_taker'].values]
 
     return parsed_pages
 
@@ -356,11 +365,30 @@ def clean_call_actions(parsed_pages):
     known_reasons_ratio = np.array([ratio(a1,a2) for a1, a2 in itertools.combinations(known_reasons, 2)])
     min_reasons_ratio = known_reasons_ratio.max()
 
-    parsed_pages['call_reasons'] = [standardize_partial(s, known_reasons, min_reasons_ratio) for s in parsed_pages['call_reason_action'].values]
-    parsed_pages['call_actions'] = [standardize_partial(s, known_actions, min_actions_ratio) for s in parsed_pages['call_reason_action'].values]
+    parsed_pages['call_reasons'] = [standardize_partial(s, known_reasons, min_reasons_ratio) for s in parsed_pages['original_call_reason_action'].values]
+    parsed_pages['call_actions'] = [standardize_partial(s, known_actions, min_actions_ratio) for s in parsed_pages['original_call_reason_action'].values]
 
 
     return parsed_pages
+
+def process_units(entry_text, call_number, all_units):
+
+    unit_starts = [uloc.start() for uloc in re.finditer(unit_strs, entry_text)] + [-1]
+    if len(unit_starts) > 1:
+        for iunits in range(len(unit_starts) - 1):
+            
+            unit_text = entry_text[unit_starts[iunits]:unit_starts[iunits+1]]
+            
+            unitnum = find_next_word(unit_text, unit_strs)
+            disp_time = find_next_word(unit_text, disp_strs)
+            enrt_time = find_next_word(unit_text, enrt_strs)
+            arvd_time = find_next_word(unit_text, arvd_strs)
+            clrd_time = find_next_word(unit_text, clrd_strs)
+            
+            all_units.append([call_number, unitnum, disp_time, enrt_time, arvd_time, clrd_time])
+            
+            
+    return all_units
 
 
 if __name__ == "__main__":

@@ -345,16 +345,16 @@ def standardize_partial(s, known_list, min_ratio):
 def clean_call_actions(parsed_pages):
 
     with open('williamston_known_actions.txt', 'r') as infile:
-        known_actions = [line.replace("\n", "") for line in infile]
+        known_actions = [line.replace("\n", "").strip() for line in infile]
 
     known_actions_ratio = np.array([ratio(a1,a2) for a1, a2 in itertools.combinations(known_actions, 2)])
-    min_actions_ratio = known_actions_ratio.max() + 5
+    min_actions_ratio = known_actions_ratio.max()
 
     with open('williamston_known_reasons.txt', 'r') as infile:
-        known_reasons = [line.replace("\n", "") for line in infile]
+        known_reasons = [line.replace("\n", "").strip() for line in infile]
 
     known_reasons_ratio = np.array([ratio(a1,a2) for a1, a2 in itertools.combinations(known_reasons, 2)])
-    min_reasons_ratio = known_reasons_ratio.max() + 5
+    min_reasons_ratio = known_reasons_ratio.max()
 
     parsed_pages['call_reasons'] = [standardize_partial(s, known_reasons, min_reasons_ratio) for s in parsed_pages['call_reason_action'].values]
     parsed_pages['call_actions'] = [standardize_partial(s, known_actions, min_actions_ratio) for s in parsed_pages['call_reason_action'].values]

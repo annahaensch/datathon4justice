@@ -2,6 +2,10 @@ import os
 import re
 import itertools
 
+from PIL import Image
+import pytesseract
+from pdf2image import pdfinfo_from_path, convert_from_path
+
 from fuzzywuzzy.fuzz import ratio, partial_ratio
 import usaddress
 
@@ -18,10 +22,11 @@ narr_strs = "|".join(["Narrative:", "Narrative"])
 vehicle_strs = "|".join(["Vehicle:", "Vehicle"])
 owner_strs = "|".join(["Owner:", "Owner"])
 operator_strs = "|".join(["Operator:", "Operator"])
-arreset_strs = "|".join(["Juvenile Arrest", "Arrest:", "Arrest"])
+arreset_strs = "|".join(["Juvenile", "Arrest:", "Arrest"])
 summons_strs = "|".join(["Summons:", "Summons"])
-charges_strs = "|".join(["Charges:", "Charges"])
+charge_strs = "|".join(["Charges:", "Charges"])
 citation_strs = "|".join(["Refer To Citation:", "Refer To Citation"])
+arreset_refer_strs = "|".join(["Refer To Arrest:", "Refer To Arrest"])
 
 unit_strs = "|".join(["Unit:", "Unit"])
 arvd_strs = "|".join(['Arvd~', 'Arvd-', "Arv@-", "Arvd+"])
@@ -46,8 +51,9 @@ def parse_police_logs(year):
 
     parsed_pages = []
     all_vehicles = []
-    all_people = []
+    all_defendants = []
     all_responding = []
+    all_arrests = []
 
     npages = len([fname for fname in os.listdir(os.path.join(path2data, 'Logs{}'.format(year))) if 'page' in fname])
     print(npages)
@@ -73,8 +79,9 @@ def parse_police_logs(year):
             
             parsed_pages[-1][2:] = replace_none_with_value(parsed_pages[-1][2:], str_entry)
             call_number = parsed_pages[-1][2]
-            all_vehicles, all_people = process_vehicles(entry_text, call_number, all_vehicles, all_people)
+            all_vehicles, all_defendants = process_vehicles(entry_text, call_number, all_vehicles, all_defendants)
             all_responding = process_units(entry_text, call_number, all_responding)
+            all_arrests = process_arrest_summons(entry_text, call_number, all_arrests)
 
         for i_start in range(len(page_incidents)-1):
 
@@ -85,14 +92,15 @@ def parse_police_logs(year):
             if str_entry.count(None) < 5:
                 parsed_pages.append([current_date, ipage] + str_entry)
                 call_number = str_entry[0]
-                all_vehicles, all_people = process_vehicles(entry_text, call_number, all_vehicles, all_people)
+                all_vehicles, all_defendants = process_vehicles(entry_text, call_number, all_vehicles, all_defendants)
                 all_responding = process_units(entry_text, call_number, all_responding)
+                all_arrests = process_arrest_summons(entry_text, call_number, all_arrests)
 
     # done so make the data frame
     parsed_pages = pd.DataFrame(parsed_pages, 
                             columns = ['current_date', 'page_num', 'call_number', 'call_time', 
                                        'original_call_reason_action', 'original_call_taker', "call_address", 
-                                       "arvd_time", "clrd_time", "narrative_text", "referenced_citation"])                
+                                       "arvd_time", "clrd_time", "narrative_text", "referenced_citation", "referenced_arrest"])                
 
     # cleanup call_takers
     parsed_pages['original_call_taker'] = parsed_pages['original_call_taker'].str.replace(":", "").str.strip()
@@ -113,16 +121,22 @@ def parse_police_logs(year):
 
     all_vehicles.to_csv('../../data/parsed_vehicles_{}.csv'.format(year), mode='w', index=False, header=True)
 
-    all_people = pd.DataFrame(all_people, 
+    all_defendants = pd.DataFrame(all_defendants, 
                             columns = ['call_number', 'operator/owner', "vehicles_vin", "lastname", 
-                            "firstname", "race", "sex", "stree", "city", "state", "zipcode"])                
+                            "firstname", "race", "sex", "street", "city", "state", "zipcode"])                
 
-    all_people.to_csv('../../data/parsed_people_{}.csv'.format(year), mode='w', index=False, header=True)
+    all_defendants.to_csv('../../data/parsed_defendants_{}.csv'.format(year), mode='w', index=False, header=True)
 
     all_responding = pd.DataFrame(all_responding, 
                             columns = ['call_number', 'unit', "disp_time", "enrt_time", "arvd_time", "clrd_time"])                
 
     all_responding.to_csv('../../data/parsed_responding_units_{}.csv'.format(year), mode='w', index=False, header=True)
+
+    all_arrests = pd.DataFrame(all_arrests, 
+                            columns = ['call_number', 'arrest_type', "arrest_reference_num", "lastname", 
+                            "firstname", "age", "street", "city", "state", "zipcode", "charges"])                
+
+    all_arrests.to_csv('../../data/parsed_arrests_{}.csv'.format(year), mode='w', index=False, header=True)
 
 
 def check_for_date(page_text):
@@ -284,10 +298,13 @@ def parse_entry(entry_text, year_str):
         # citations
         citation_text = find_next_word(entry_text, citation_strs)
 
-    return [call_number, call_time, call_reason, call_taker, call_address, arvd_time, clrd_time, narrative_text, citation_text]
+        # arrest references
+        ref_arrest_text = find_next_word(entry_text, arreset_refer_strs)
+
+    return [call_number, call_time, call_reason, call_taker, call_address, arvd_time, clrd_time, narrative_text, citation_text, ref_arrest_text]
 
 
-def process_vehicles(entry_text, call_number, all_vehicles, all_people):
+def process_vehicles(entry_text, call_number, all_vehicles, all_defendants):
 
     vehicle_starts = [vloc.start() for vloc in re.finditer(vehicle_strs, entry_text)] + [-1]
 
@@ -331,12 +348,12 @@ def process_vehicles(entry_text, call_number, all_vehicles, all_people):
                 all_vehicles.append([call_number] + get_vehicle_info(vehicle_txt))
             
             if operator_txt:
-                all_people.append([call_number, 'operator', vinfo[3]] + get_person_info(operator_txt))
+                all_defendants.append([call_number, 'operator', vinfo[3]] + get_person_info(operator_txt))
                 
             if owner_txt:
-                all_people.append([call_number, 'owner', vinfo[3]] + get_person_info(owner_txt))
+                all_defendants.append([call_number, 'owner', vinfo[3]] + get_person_info(owner_txt))
 
-    return all_vehicles, all_people
+    return all_vehicles, all_defendants
 
         
 def get_vehicle_info(vehicle_txt):
@@ -393,6 +410,8 @@ def get_person_info(person_txt):
     
     race = find_next_word(person_txt, 'Race:')
     sex = find_next_word(person_txt, 'Sex:')
+
+    age = find_next_word(person_txt, 'Age:')
         
     return [lastname, firstname, race, sex, st, city, state, zipcode]
 
@@ -443,25 +462,94 @@ def process_units(entry_text, call_number, all_units):
             
     return all_units
 
-def process_arrest_summons(entry_text, call_number, all_people):
+def get_arrest_info(person_txt):
+    
+    arrest_type = re.search('Juvenile', person_txt)
+    if arrest_type:
+        arrest_type = 'juvenile_arrest'
+    else:
+        arrest_type = 'arrest'
+    
+    name_txt = find_between(person_txt, arreset_strs, 'Address')
+    if name_txt:
+        lastname = name_txt.split(',')[0]
+        firstname = name_txt.split(',')[1]
+    else:
+        lastname = None
+        firstname = None
+    
+    address = usaddress.parse(person_txt)
+    st = " ".join([e[0] for e in address if e[1] in ['AddressNumber', 'StreetName', 'StreetNamePostType', 'OccupancyType', 'OccupancyIdentifier']])
+    city = " ".join([e[0] for e in address if e[1] in ['PlaceName']])
+    state = " ".join([e[0] for e in address if e[1] in ['StateName']])
+    zipcode = " ".join([e[0] for e in address if e[1] in ['ZipCode']])
+    
+    age = find_next_word(person_txt, 'Age:')
+    charges = re.search(charge_strs, person_txt)
+    if charges:
+        charges = person_txt[charges.end():]
+    return [arrest_type, lastname, firstname, age, st, city, state, zipcode, charges]
 
-    arrest_starts = [aloc.start() for aloc in re.finditer(arrest_strs, entry_text)] + [-1]
-    if len(unit_starts) > 1:
-        for iunits in range(len(unit_starts) - 1):
+def process_arrest_summons(entry_text, call_number, all_arrests):
+    """
+    This still needs a lot of work
+    ToDo pull out the Arrest information.  Problem is multiple Arrests i.e. 19-3537
+    """
+    arrest_starts = [aloc.start() for aloc in re.finditer(arreset_strs, entry_text)] + [-1]
+    
+    try:
+        for iarr in range(0, len(arrest_starts)-1, 2):
+            # the first entry is the reference number
+            arrest_num = entry_text[arrest_starts[iarr]:arrest_starts[iarr+1]]
+            arrest_num = find_next_word(arrest_num, arreset_strs)
             
-            unit_text = entry_text[unit_starts[iunits]:unit_starts[iunits+1]]
+            # the second arrest mention is the actual arrest info
+            arrest_text = entry_text[arrest_starts[iarr+1]:arrest_starts[iarr+2]]
+            arrest_entry = get_arrest_info(arrest_text)
+            arrest_entry = [call_number, arrest_num] + arrest_entry
             
-            unitnum = find_next_word(unit_text, unit_strs)
-            disp_time = find_next_word(unit_text, disp_strs)
-            enrt_time = find_next_word(unit_text, enrt_strs)
-            arvd_time = find_next_word(unit_text, arvd_strs)
-            clrd_time = find_next_word(unit_text, clrd_strs)
-            
-            all_units.append([call_number, unitnum, disp_time, enrt_time, arvd_time, clrd_time])
-            
-            
-    return all_units
+            all_arrests.append(arrest_entry)
+    except IndexError:
+        if False:
+            print()
+            print(arrest_starts)
+            print(call_number, entry_text)
+            print()
+    return all_arrests
 
+def parse_police_pdf(path2pdf = '../primary_datasets/Williamstown_policing/Logs2020.pdf', path2dataout='../data/Logs2020'):
+    info = pdfinfo_from_path(path2pdf, userpw=None, poppler_path=None)
+
+    maxPages = info["Pages"]
+
+    n = 1
+
+    for page in range(1, maxPages+1, 10) :
+        pages = convert_from_path('../primary_datasets/Williamstown_policing/Logs2020.pdf', 
+                              dpi=300, first_page=page, last_page = min(page+10-1,maxPages))
+            
+        for page in pages:
+            
+            if n% 50 == 0:
+                print(n)
+            # Write pdf to image file.
+            img_file = os.path.join(path2dataout, 'out_{}.jpg'.format(n))
+            page.save(img_file.format(n),"JPEG")
+
+
+            # Write image file to text file.
+            text_file = open(os.path.join(path2dataout,'page_{}.txt'.format(n), 'w')
+            text=str(pytesseract.image_to_string(Image.open(img_file),lang='eng', config='--psm 12'))  # 12
+            text=text.replace("\n"," ") # make spaces
+
+            text_file.write(text)
+            text_file.close()
+            
+            
+            #and delete image file
+            os.remove(img_file)
+
+            n += 1
 
 if __name__ == "__main__":
     parse_police_logs(2019)

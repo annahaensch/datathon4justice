@@ -1,0 +1,8 @@
+call_number,arrest_type,arrest_reference_num,lastname,firstname,age,street,city,state,zipcode,charges
+19-382,i9-5-AR,arrest,PEELE, GEORGE EDWARD IIT,20,1019 DIXWELL AVE,"HAMDEN,",CT,,"  MOTOR VEH, RECEIVE STOLEN "
+19-8200,15-76-AR,arrest,,,,,,,,
+19-8200,15-76-AR,arrest,,,,,,,,
+19-8821,269A,arrest,,,,,,,,
+19-5269,"s,",juvenile_arrest,,,,,,,,
+19-5269,"s,",juvenile_arrest,,,,,,,,
+19-11459,te,arrest,,,,,,,,

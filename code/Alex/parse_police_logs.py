@@ -69,7 +69,7 @@ def parse_police_logs(year):
         initial_text = page_text[0:page_incidents[0]]
         if len(initial_text) > 0 and len(parsed_pages) > 0:
             #print(initial_text)
-            str_entry = parse_entry(initial_text)
+            str_entry = parse_entry(initial_text, year_str)
             
             parsed_pages[-1][2:] = replace_none_with_value(parsed_pages[-1][2:], str_entry)
             call_number = parsed_pages[-1][2]
@@ -80,7 +80,7 @@ def parse_police_logs(year):
 
             entry_text = page_text[page_incidents[i_start]:page_incidents[i_start + 1]]
             
-            str_entry = parse_entry(entry_text)
+            str_entry = parse_entry(entry_text, year_str)
             
             if str_entry.count(None) < 5:
                 parsed_pages.append([current_date, ipage] + str_entry)
@@ -187,7 +187,7 @@ def replace_none_with_value(left_list, right_list):
 
 
 
-def parse_entry(entry_text):
+def parse_entry(entry_text, year_str):
     entry_words = [w for w in entry_text.split(' ') if len(w) > 0]
     
     
@@ -197,7 +197,7 @@ def parse_entry(entry_text):
         # call number is always the first word of the entry
         call_number = entry_words[0]
 
-        if re.search('19-(?=[0-9])', call_number):
+        if re.search(year_str + '(?=[0-9])', call_number):
             # the next 'word' is always the time
             call_time = entry_words[1][:min(4, len(entry_words[1]))]
             for c in ['(', ')', "[", "]", "{", "}"]:
